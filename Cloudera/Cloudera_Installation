@@ -1,0 +1,194 @@
+###Desabilitar selinux###
+
+sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/selinux/config
+
+###Desabilitar firewall###
+systemctl disable firewalld; systemctl mask firewalld
+
+###Setar swappiness###
+echo 1 > /proc/sys/vm/swappiness; echo 'vm.swappiness = 1' >> /etc/sysctl.conf
+
+###Desabilitar transparent_hugepage###
+echo never > /sys/kernel/mm/transparent_hugepage/defrag
+
+##Disable huge pages auto##
+
+
+Create following file:
+
+vim /etc/systemd/system/disable-thp.service
+and paste there following content:
+
+[Unit]
+Description=Disable Transparent Huge Pages (THP)
+
+[Service]
+Type=simple
+ExecStart=/bin/sh -c "echo 'never' > /sys/kernel/mm/transparent_hugepage/enabled && echo 'never' > /sys/kernel/mm/transparent_hugepage/defrag"
+
+[Install]
+WantedBy=multi-user.target
+
+Save the file and reload SystemD daemon:
+
+systemctl daemon-reload
+Than you can start the script and enable it on boot level:
+
+systemctl start disable-thp; systemctl enable disable-thp
+
+
+###Setar númeto de arquivos### 
+echo hdfs -nofile 32768 >> /etc/security/limits.conf
+echo mapred -nofile 32768 >> /etc/security/limits.conf
+echo hbase -nofile 32768 >> /etc/security/limits.conf
+
+echo hdfs -nproc 32768 >> /etc/security/limits.conf
+echo mapred -nproc 32768 >> /etc/security/limits.conf
+echo hbase -nproc 32768 >> /etc/security/limits.conf
+
+###ajustar timezone###
+timedatectl set-timezone America/Sao_Paulo
+
+###Ajustar ntp###
+vim /etc/ntp.conf
+server 0.br.pool.ntp.org
+server 1.br.pool.ntp.org
+server 2.br.pool.ntp.org
+server 3.br.pool.ntp.org
+systemctl restart ntpd
+
+ntpq -p
+
+###Update da máquina###
+yum update -y
+
+
+yum install vim wget -y
+reboot
+
+###Instalar banco de dados###
+yum install mariadb-server -y
+
+###setar arquivo my.cnf###
+vim /etc/my.cnf
+
+~conteúdo do arquivo~
+[mysqld]
+server-id = 1
+transaction-isolation = READ-COMMITTED
+# Disabling symbolic-links is recommended to prevent assorted security risks;
+# to do so, uncomment this line:
+# symbolic-links = 0
+
+key_buffer = 16M
+key_buffer_size = 32M
+max_allowed_packet = 32M
+thread_stack = 256K
+thread_cache_size = 64
+query_cache_limit = 8M
+query_cache_size = 64M
+query_cache_type = 1
+
+max_connections = 550
+#expire_logs_days = 10
+#max_binlog_size = 100M
+
+#log_bin should be on a disk with enough free space. Replace '/var/lib/mysql/mysql_binary_log' with an appropriate path for your system
+#and chown the specified folder to the mysql user.
+log_bin=/var/lib/mysql/mysql_binary_log
+
+binlog_format = mixed
+
+read_buffer_size = 2M
+read_rnd_buffer_size = 16M
+sort_buffer_size = 8M
+join_buffer_size = 8M
+
+[mysqld_safe]
+log-error=/var/log/mariadb/mariadb.log
+pid-file=/var/run/mariadb/mariadb.pid
+
+~ fim do conteudo do arquivo~
+
+systemctl restart mariadb.service
+systemctl enable mariadb.service
+
+
+###instação do mysql###
+/usr/bin/mysql_secure_installation
+
+###rodar no banco de dados###
+create database amon DEFAULT CHARACTER SET utf8;
+grant all on amon.* TO 'amon'@'%' IDENTIFIED BY 'amon';
+
+create database rman DEFAULT CHARACTER SET utf8;
+grant all on rman.* TO 'rman'@'%' IDENTIFIED BY 'rman';
+
+create database metastore DEFAULT CHARACTER SET utf8;
+grant all on metastore.* TO 'hive'@'%' IDENTIFIED BY 'hive';
+
+create database sentry DEFAULT CHARACTER SET utf8;
+grant all on sentry.* TO 'sentry'@'%' IDENTIFIED BY 'sentry';
+
+create database nav DEFAULT CHARACTER SET utf8;
+grant all on nav.* TO 'nav'@'%' IDENTIFIED BY 'nav';
+
+create database navms DEFAULT CHARACTER SET utf8;
+grant all on navms.* TO 'navms'@'%' IDENTIFIED BY 'navms';
+
+create database hue DEFAULT CHARACTER SET utf8;
+grant all on hue.* to 'hue'@'%' identified by 'hue';
+
+create database oozie DEFAULT CHARACTER SET utf8;
+grant all privileges on oozie.* to 'oozie'@'localhost' identified by 'oozie';
+grant all privileges on oozie.* to 'oozie'@'%' identified by 'oozie';
+
+
+### Se tiver replicação do BD ###
+
+# No Master Node set replication
+
+GRANT REPLICATION SLAVE ON *.* TO 'replicator'@'master1rblz.c.practical-block-199314.internal' IDENTIFIED BY 'replicate123';
+SET GLOBAL binlog_format = 'ROW';
+FLUSH TABLES WITH READ LOCK;
+SHOW MASTER STATUS;
+UNLOCK TABLES;
+
+# No Slave Node set replication
+
+CHANGE MASTER TO MASTER_HOST='cm-server.c.practical-block-199314.internal', MASTER_USER='replicator', MASTER_PASSWORD='replicate123', MASTER_LOG_FILE='mysql_binary_log.000003', MASTER_LOG_POS=3780;
+START SLAVE;
+SHOW SLAVE STATUS \G;
+
+grant all on *.* to 'temp'@'%' identified by 'temp' with grant option;
+
+
+###instalar java###
+rpm -ivh jdk-8u144-linux-x64.rpm
+
+###instalar e setar conector mysql###
+tar xvfz mysql-connector-java-5.1.45.tar.gz
+mkdir -p /usr/share/java/ && cp mysql-connector-java-5.1.45/mysql-connector-java-5.1.45-bin.jar /usr/share/java/mysql-connector-java.jar
+
+###baixar repo cloudera###
+cd /etc/yum.repos.d/ && wget https://archive.cloudera.com/cm5/redhat/7/x86_64/cm/cloudera-manager.repo
+
+###instalar no server repo cloudera-server###
+yum install cloudera-manager-daemons cloudera-manager-server -y
+
+###preparar database para external acess###
+/usr/share/cmf/schema/scm_prepare_database.sh mysql scm scm scm
+
+**se der ruim**
+create database scm DEFAULT CHARACTER SET utf8;
+grant all on scm.* to 'scm'@'%' identified by 'scm';
+**           **
+
+###startar cloudera-server###
+service cloudera-scm-server start
+
+
+###Nos worker nodes###
+yum install -y cloudera-manager-agent cloudera-manager-daemons
+
+	
